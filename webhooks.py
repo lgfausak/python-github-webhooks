@@ -17,7 +17,6 @@
 
 import logging
 from sys import stderr, hexversion
-logging.basicConfig(stream=stderr)
 
 import hmac
 from hashlib import sha1
@@ -34,6 +33,8 @@ from flask import Flask, request, abort
 
 application = Flask(__name__)
 
+numeric_level = getattr(logging, 'DEBUG', None)
+logging.basicConfig(stream=stderr, level=numeric_level)
 
 @application.route('/', methods=['GET', 'POST'])
 def index():
@@ -41,8 +42,11 @@ def index():
     Main WSGI application entry.
     """
 
+    logging.info('WSGI entry index()')
+
     path = normpath(abspath(dirname(__file__)))
     hooks = join(path, 'hooks')
+    logging.debug('hooks %s, path %s', hooks, path)
 
     # Only POST is implemented
     if request.method != 'POST':
@@ -102,6 +106,8 @@ def index():
     except:
         abort(400)
 
+    logging.debug('payload:\n$s\n', payload)
+
     # Determining the branch is tricky, as it only appears for certain event
     # types an at different levels
     branch = None
@@ -137,21 +143,29 @@ def index():
         'branch': branch,
         'event': event
     }
-    logging.info('Metadata:\n{}'.format(dumps(meta)))
+    logging.info('Metadata:%s\n',dumps(meta))
 
     # Possible hooks
     scripts = []
     if branch and name:
         scripts.append(join(hooks, '{event}-{name}-{branch}'.format(**meta)))
+        logging.debug('scripts 1 is %s\n', scripts)
     if name:
         scripts.append(join(hooks, '{event}-{name}'.format(**meta)))
+        logging.debug('scripts 2 is %s\n', scripts)
     scripts.append(join(hooks, '{event}'.format(**meta)))
+    logging.debug('scripts 3 is %s\n', scripts)
     scripts.append(join(hooks, 'all'))
+
+    logging.debug('scripts is %s\n', scripts)
 
     # Check permissions
     scripts = [s for s in scripts if isfile(s) and access(s, X_OK)]
     if not scripts:
+        logging.debug('scripts is blank, returning\n')
         return ''
+
+    logging.info('Metadata:%s\n',dumps(meta))
 
     # Save payload to temporal file
     _, tmpfile = mkstemp()
@@ -176,9 +190,7 @@ def index():
 
         # Log errors if a hook failed
         if proc.returncode != 0:
-            logging.error('{} : {} \n{}'.format(
-                s, proc.returncode, stderr
-            ))
+            logging.error('%s : %s \n', s, proc.returncode)
 
     # Remove temporal file
     remove(tmpfile)
